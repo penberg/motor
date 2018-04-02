@@ -24,6 +24,7 @@ pub struct Module {
 #[derive(Debug)]
 enum Section {
     Custom,
+    Type { entries: Vec<FuncType> },
     Function { types: Vec<u32> },
     Memory { entries: Vec<MemoryType> },
     Start { index: u32 },
@@ -62,6 +63,13 @@ enum ValueType {
     F64,
 }
 
+#[derive(Debug)]
+struct FuncType {
+    form: i8,
+    param_types: Vec<ValueType>,
+    return_type: Option<ValueType>,
+}
+
 impl Module {
     pub fn parse(f: &mut File) -> Result<Module, ParseError> {
         let magic_number = f.read_u32::<LittleEndian>().unwrap();
@@ -97,6 +105,7 @@ impl Section {
         let payload_len = try!(Section::parse_varuint32(f)) as usize;
         match id {
             0 => Section::parse_custom_section(f, payload_len),
+            1 => Section::parse_type_section(f),
             3 => Section::parse_function_section(f),
             8 => Section::parse_start_section(f),
             5 => Section::parse_memory_section(f),
@@ -121,6 +130,38 @@ impl Section {
         Ok(Some(Section::Custom))
     }
 
+    fn parse_type_section(f: &mut File) -> Result<Option<Section>, ParseError> {
+        let mut entries = vec![];
+        let count = try!(Section::parse_varuint32(f));
+        for _ in 0..count {
+            let entry = try!(Section::parse_func_type(f));
+            entries.push(entry);
+        }
+        Ok(Some(Section::Type { entries: entries }))
+    }
+
+    fn parse_func_type(f: &mut File) -> Result<FuncType, ParseError> {
+        let form = try!(Section::parse_varint7(f));
+        let mut param_types = vec![];
+        let param_count = try!(Section::parse_varuint32(f));
+        for _ in 0..param_count {
+            let ty = try!(Section::parse_value_type(f));
+            param_types.push(ty);
+        }
+        let return_count = try!(Section::parse_varuint1(f));
+        let return_type = if return_count > 0 {
+            let ty = try!(Section::parse_value_type(f));
+            Some(ty)
+        } else {
+            None
+        };
+        Ok(FuncType {
+            form: form,
+            param_types: param_types,
+            return_type: return_type,
+        })
+    }
+
     fn parse_function_section(f: &mut File) -> Result<Option<Section>, ParseError> {
         let mut types = vec![];
         let count = try!(Section::parse_varuint32(f));
@@ -143,9 +184,7 @@ impl Section {
 
     fn parse_start_section(f: &mut File) -> Result<Option<Section>, ParseError> {
         let index = try!(Section::parse_varuint32(f));
-        Ok(Some(Section::Start {
-            index: index as u32,
-        }))
+        Ok(Some(Section::Start { index: index as u32 }))
     }
 
     fn parse_code_section(f: &mut File) -> Result<Option<Section>, ParseError> {
@@ -246,6 +285,13 @@ impl Section {
         match leb128::read::signed(f) {
             Err(e) => return Err(ParseError::DecodeError(e)),
             Ok(val) => return Ok(val as i8),
+        }
+    }
+
+    fn parse_varuint1(f: &mut File) -> Result<u8, ParseError> {
+        match leb128::read::signed(f) {
+            Err(e) => return Err(ParseError::DecodeError(e)),
+            Ok(val) => return Ok(val as u8),
         }
     }
 }
