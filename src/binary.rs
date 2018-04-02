@@ -2,6 +2,7 @@
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use leb128;
+use std::string;
 use std::fs::File;
 use std::io::{Error, Read};
 
@@ -10,7 +11,9 @@ pub enum ParseError {
     BadMagic(u32),
     UnsupportedVersion(u32),
     InvalidValueType(i8),
+    InvalidExternalKind(u8),
     IoError(Error),
+    Utf8Error(string::FromUtf8Error),
     DecodeError(leb128::read::Error),
 }
 
@@ -27,6 +30,7 @@ enum Section {
     Type { entries: Vec<FuncType> },
     Function { types: Vec<u32> },
     Memory { entries: Vec<MemoryType> },
+    Export { entries: Vec<ExportEntry> },
     Start { index: u32 },
     Code { bodies: Vec<FunctionBody> },
     Unknown { id: u32 },
@@ -35,6 +39,21 @@ enum Section {
 #[derive(Debug)]
 struct MemoryType {
     limits: ResizableLimits,
+}
+
+#[derive(Debug)]
+enum ExternalKind {
+    Function,
+    Table,
+    Memory,
+    Global,
+}
+
+#[derive(Debug)]
+struct ExportEntry {
+    field_name: String,
+    kind: ExternalKind,
+    index: u32,
 }
 
 #[derive(Debug)]
@@ -107,6 +126,7 @@ impl Section {
             0 => Section::parse_custom_section(f, payload_len),
             1 => Section::parse_type_section(f),
             3 => Section::parse_function_section(f),
+            7 => Section::parse_export_section(f),
             8 => Section::parse_start_section(f),
             5 => Section::parse_memory_section(f),
             10 => Section::parse_code_section(f),
@@ -170,6 +190,45 @@ impl Section {
             types.push(ty);
         }
         Ok(Some(Section::Function { types: types }))
+    }
+
+    fn parse_export_section(f: &mut File) -> Result<Option<Section>, ParseError> {
+        let mut entries = vec![];
+        let count = try!(Section::parse_varuint32(f));
+        for _ in 0..count {
+            let entry = try!(Section::parse_export_entry(f));
+            entries.push(entry);
+        }
+        Ok(Some(Section::Export { entries: entries }))
+    }
+
+    fn parse_export_entry(f: &mut File) -> Result<ExportEntry, ParseError> {
+        let field_len = try!(Section::parse_varuint32(f));
+        let mut field_str = vec![0u8; field_len as usize];
+        if let Err(e) = f.read_exact(&mut field_str) {
+            return Err(ParseError::IoError(e));
+        }
+        let mut external_kind = [0; 1];
+        if let Err(e) = f.read_exact(&mut external_kind) {
+            return Err(ParseError::IoError(e));
+        }
+        let kind = match external_kind[0] {
+            0 => ExternalKind::Function,
+            1 => ExternalKind::Table,
+            2 => ExternalKind::Memory,
+            3 => ExternalKind::Global,
+            _ => return Err(ParseError::InvalidExternalKind(external_kind[0])),
+        };
+        let index = try!(Section::parse_varuint32(f));
+        let field_name = match String::from_utf8(field_str) {
+            Err(e) => return Err(ParseError::Utf8Error(e)),
+            Ok(val) => val,
+        };
+        Ok(ExportEntry {
+            field_name: field_name,
+            kind: kind,
+            index: index,
+        })
     }
 
     fn parse_memory_section(f: &mut File) -> Result<Option<Section>, ParseError> {
