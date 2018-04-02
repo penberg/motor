@@ -6,4 +6,6 @@ authors = ["Pekka Enberg <penberg@iki.fi>"]
 [dependencies]
 byteorder = "1.2"
 clap = "2.31"
+dynasm = "0.1.4"
+dynasmrt = "0.1.4"
 leb128 = "0.2"

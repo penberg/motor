@@ -2,9 +2,9 @@
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use leb128;
-use std::string;
 use std::fs::File;
 use std::io::{Error, Read};
+use std::string;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -63,19 +63,19 @@ struct ResizableLimits {
 }
 
 #[derive(Debug)]
-struct FunctionBody {
-    locals: Vec<LocalEntry>,
-    code: Vec<u8>,
+pub struct FunctionBody {
+    pub locals: Vec<LocalEntry>,
+    pub code: Vec<u8>,
 }
 
 #[derive(Debug)]
-struct LocalEntry {
+pub struct LocalEntry {
     count: u32,
     ty: ValueType,
 }
 
 #[derive(Debug)]
-enum ValueType {
+pub enum ValueType {
     I32,
     I64,
     F32,
@@ -90,6 +90,30 @@ struct FuncType {
 }
 
 impl Module {
+    pub fn find_start_func(&self) -> Option<&FunctionBody> {
+        let mut start_idx: Option<u32> = None;
+        for section in &self.sections {
+            match section {
+                Section::Start { index } => start_idx = Some(*index),
+                _ => (),
+            }
+        }
+        match start_idx {
+            Some(idx) => self.find_func(idx as usize),
+            None => None,
+        }
+    }
+
+    fn find_func(&self, idx: usize) -> Option<&FunctionBody> {
+        for section in &self.sections {
+            match section {
+                Section::Code { bodies } => return Some(&bodies[idx]),
+                _ => (),
+            }
+        }
+        None
+    }
+
     pub fn parse(f: &mut File) -> Result<Module, ParseError> {
         let magic_number = f.read_u32::<LittleEndian>().unwrap();
         if magic_number != 0x6d736100 {
@@ -243,7 +267,9 @@ impl Section {
 
     fn parse_start_section(f: &mut File) -> Result<Option<Section>, ParseError> {
         let index = try!(Section::parse_varuint32(f));
-        Ok(Some(Section::Start { index: index as u32 }))
+        Ok(Some(Section::Start {
+            index: index as u32,
+        }))
     }
 
     fn parse_code_section(f: &mut File) -> Result<Option<Section>, ParseError> {
