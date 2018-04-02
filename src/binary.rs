@@ -249,7 +249,7 @@ impl Section {
     }
 
     fn parse_resizable_limits(f: &mut File) -> Result<ResizableLimits, ParseError> {
-        let flags = try!(Section::parse_varuint32(f));
+        let flags = try!(Section::parse_varuint1(f));
         let initial = try!(Section::parse_varuint32(f));
         let maximum = if flags == 1 {
             let maximum_raw = try!(Section::parse_varuint32(f));
