@@ -1,0 +1,9 @@
+[package]
+name = "motor"
+version = "0.1.0"
+authors = ["Pekka Enberg <penberg@iki.fi>"]
+
+[dependencies]
+byteorder = "1.2"
+clap = "2.31"
+leb128 = "0.2"
